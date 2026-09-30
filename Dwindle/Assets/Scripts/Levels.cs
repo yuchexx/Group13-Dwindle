@@ -29,7 +29,7 @@ public static class Levels
     static LevelData Sketch3x3()
     {
         var l = new LevelData { title = "Level 2", width = 3, height = 3, required = 2, bonus = BonusGoal.UseEveryType };
-        l.inventory = Inv(cross: 2, ne: 4, es: 4, sw: 4, wn: 4, h: 4, v: 4);
+        l.inventory = Inv(cross: 2, ne: 2, es: 1, sw: 2, wn: 2, h: 4, v: 2);
         l.objects.Add(Obj("Red", Red, 1, -1, Dir.N, 0, 3));
         l.objects.Add(Obj("Green", Green, 2, 3, Dir.S, -1, 1));
         l.objects.Add(Obj("Cyan", Cyan, -1, 0, Dir.E, 3, 0));
@@ -40,7 +40,7 @@ public static class Levels
     static LevelData Shared4x4()
     {
         var l = new LevelData { title = "Level 3", width = 4, height = 4, required = 2, bonus = BonusGoal.ComboDelivery };
-        l.inventory = Inv(cross: 4, ne: 2, es: 3, sw: 2, wn: 2, h: 3, v: 6);
+        l.inventory = Inv(cross: 3, ne: 2, es: 2, sw: 2, wn: 2, h: 3, v: 3);
         l.obstacles.Add(new Vector2Int(0, 2));
         l.objects.Add(Obj("Red", Red, -1, 3, Dir.E, 4, 0));
         l.objects.Add(Obj("Blue", Blue, 0, -1, Dir.N, 4, 3));

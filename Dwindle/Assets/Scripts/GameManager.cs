@@ -657,7 +657,7 @@ public class GameManager : MonoBehaviour
             (isLast && stars > 0 ? "\nThat was the last level!" : "");
 
         resumeButton.SetActive(!ended);
-        nextButton.interactable = stars >= 1 && !isLast;
+        nextButton.gameObject.SetActive(ended && stars >= 1 && !isLast);
         levelMenu.SetActive(true);
     }
 
@@ -678,6 +678,11 @@ public class GameManager : MonoBehaviour
     public void Resume() => levelMenu.SetActive(false);
     public void ShowRules() => rulesPopup.SetActive(true);
     public void HideRules() => rulesPopup.SetActive(false);
+    // clicking outside the home panel closes it but only while paused not end of the level
+    public void DismissMenuIfPaused()
+    {
+        if (!levelOver) levelMenu.SetActive(false);
+    }
 
     // HUD
     void RefreshAll()
@@ -702,12 +707,14 @@ public class GameManager : MonoBehaviour
     {
         levelTitleText.text = level.title;
         string goal = "";
-        goal += "Deliver each object to its matching ring.\n" +
-                $"Delivered: {Delivered} / {objects.Count}\n" +
-                $"Need {level.required} for 1 star, all {objects.Count} for 2.\n";
+        goal += "Deliver every object to the ring of its own color.\n\n" +
+                $"Delivered: {Delivered} of {objects.Count}\n";
         goal += $"Tiles left: {inventory.Values.Sum()}";
+        goal += $"\n\n1 star: deliver {level.required}" +
+                $"\n2 stars: deliver all {objects.Count}";
         goalText.text = goal;
-        bonusText.text = $"Bonus (3rd star):\n{level.BonusText()}\n" + $"Status: {(BonusMet() ? "achieved" : "not yet")}";
+        bonusText.text = $"3 stars: deliver all {objects.Count} and\n{level.BonusText()}\n" +
+                         $"Bonus so far: {(BonusMet() ? "done" : "not yet")}";
     }
 
     void RefreshRemoved(bool pickable = false)
