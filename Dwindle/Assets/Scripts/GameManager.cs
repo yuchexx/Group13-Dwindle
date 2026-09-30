@@ -32,6 +32,9 @@ public class GameManager : MonoBehaviour
     public Color flashColor = new Color(1f, 0.45f, 0.45f);
     public Color crossHighlightColor = new Color(0.98f, 0.88f, 0.55f);
     public Color recoverySelectedColor = new Color(0.95f, 0.78f, 0.25f);
+    public Color starOnColor = new Color(1f, 0.82f, 0.2f);
+    public Color starOffColor = new Color(0.32f, 0.33f, 0.37f);
+    public Color bonusStarOnColor = new Color(0.45f, 0.80f, 0.95f);
 
     [Header("HUD")]
     public RectTransform slotsRoot;
@@ -54,8 +57,18 @@ public class GameManager : MonoBehaviour
     public float flashHoldSeconds = 0.4f;
     public float flashFadeSeconds = 1.2f;
 
-    [Header("Testing")]
-    public int firstLevel = 0; // 0 = Level 1
+    [Header("Screens and menus")]
+    public GameObject startScreen;
+    public GameObject gameScreen;
+    public GameObject rulesPopup;
+    public GameObject levelMenu;
+    public float endPopupDelay = 1.2f;
+    public TMP_Text bonusText;
+    public TMP_Text menuTitle;
+    public TMP_Text menuSummary;
+    public Image[] menuStars;
+    public GameObject resumeButton;
+    public Button nextButton;
 
     class Cell
     {
@@ -74,6 +87,7 @@ public class GameManager : MonoBehaviour
         public List<Vector2Int> path = new List<Vector2Int>();
         public ObjectView view;
         public DestinationView dest;
+        public bool blocked;
     }
 
     class RemovedEntry
@@ -97,12 +111,14 @@ public class GameManager : MonoBehaviour
     TileType? pendingRecovery;
     bool comboAchieved;
     string finalComboNote; // set when the last objects arrive together
+    HashSet<TileCategory> usedCategories;
+    bool levelOver;
 
     // level loading and the board
     void Start()
     {
         BuildSlots();
-        LoadLevel(firstLevel);
+        ShowStartScreen();
     }
 
     public void LoadLevel(int index)
@@ -110,6 +126,12 @@ public class GameManager : MonoBehaviour
         StopAllCoroutines();
         Clear(choicesRoot);
         choiceDimmer.SetActive(false);
+        rulesPopup.SetActive(false);
+        levelMenu.SetActive(false);
+        startScreen.SetActive(false);
+        gameScreen.SetActive(true);
+        levelOver = false;
+        usedCategories = new HashSet<TileCategory>();
         levelIndex = index;
         level = Levels.All[index];
         inventory = Tiles.All.ToDictionary(t => t, t => level.inventory.TryGetValue(t, out var c) ? c : 0);
@@ -217,6 +239,7 @@ public class GameManager : MonoBehaviour
 
     void SelectTile(TileType t)
     {
+        if (levelOver) return;
         if (inventory[t] <= 0) { Log($"No {Tiles.Name(t)} tiles left."); return; }
         selected = selected == t ? (TileType?)null : t; // clicking the selected tile again deselects it
         RefreshInventory();
@@ -224,6 +247,7 @@ public class GameManager : MonoBehaviour
 
     void OnCellClicked(Vector2Int p)
     {
+        if (levelOver) return;
         if (busy) return;
         var cell = cells[p.x, p.y];
         if (cell.obstacle) { Log("That space is blocked."); return; }
@@ -234,11 +258,12 @@ public class GameManager : MonoBehaviour
         inventory[t]--;
         SetTile(p, t);
         Log($"Placed {Tiles.Name(t)} at ({p.x},{p.y}).");
+        usedCategories.Add(Tiles.Category(t));
         RefreshAll();
         StartCoroutine(ResolveRound());
     }
 
-    // after one tile placement.
+    // movement after one tile placement
     IEnumerator ResolveRound()
     {
         busy = true;
@@ -252,12 +277,18 @@ public class GameManager : MonoBehaviour
             {
                 deliveredNow.Add(o);
                 Log($"{o.spec.name} reached its destination!");
+                if (level.bonus == BonusGoal.ShortestRoute)
+                    Log(TookShortestRoute(o)
+                        ? $"{o.spec.name} took a shortest route ({o.path.Count} tiles)."
+                        : $"{o.spec.name} took {o.path.Count} tiles; the shortest route is {ShortestRouteCells(o.spec)}.");
             }
         }
+
         if (deliveredNow.Count > 0) yield return HandleDeliveries(deliveredNow);
 
         busy = false;
         RefreshAll();
+        CheckLevelEnd();
     }
 
     // moves one object as far as the path goes. Each tile is traversed
@@ -476,6 +507,178 @@ public class GameManager : MonoBehaviour
         img.color = cellColor;
     }
 
+    // end of level, stars and menus
+    void CheckLevelEnd()
+    {
+        if (levelOver) return;
+        UpdateBlocked();
+        string reason = null;
+        if (objects.All(o => o.completed)) reason = "Every object was delivered!";
+        else if (objects.All(o => o.completed || o.blocked)) reason = "Every remaining object is blocked.";
+        else if (objects.All(o => o.completed || !CanStillReach(o))) reason = "No remaining object can reach its destination.";
+        else if (inventory.Values.Sum() == 0) reason = "You ran out of tiles.";
+        else if (!AnyEmptyCell()) reason = "There are no empty cells left.";
+        if (reason == null) return;
+
+        levelOver = true;
+        selected = null;
+        Log(reason);
+        RefreshAll();
+        StartCoroutine(ShowEndMenuAfterDelay(reason));
+    }
+
+    IEnumerator ShowEndMenuAfterDelay(string reason)
+    {
+        yield return new WaitForSeconds(endPopupDelay);
+        ShowMenu(true, reason);
+    }
+
+    // blocked = the grid edge, an obstacle, or a tile with no opening toward the object
+    // facing an empty cell is never blocked
+    bool IsBlocked(MovingObject o)
+    {
+        var next = o.pos + DirUtil.Offset(o.heading);
+        if (!InGrid(next)) return next != o.spec.dest;
+        var cell = cells[next.x, next.y];
+        if (cell.obstacle) return true;
+        return cell.tile != null && !Tiles.Has(cell.tile.Value, DirUtil.Opposite(o.heading));
+    }
+
+    // a breadth-first search over every (cell, heading) the object could get to
+    bool CanStillReach(MovingObject o)
+    {
+        var seen = new HashSet<(Vector2Int, Dir)>();
+        var queue = new Queue<(Vector2Int pos, Dir heading)>();
+        queue.Enqueue((o.pos, o.heading));
+        while (queue.Count > 0)
+        {
+            var (pos, heading) = queue.Dequeue();
+            var next = pos + DirUtil.Offset(heading);
+            if (!InGrid(next))
+            {
+                if (next == o.spec.dest) return true;
+                continue; // any other edge is a dead end
+            }
+            var cell = cells[next.x, next.y];
+            if (cell.obstacle) continue;
+            var entry = DirUtil.Opposite(heading);
+            if (cell.tile != null && !Tiles.Has(cell.tile.Value, entry)) continue;
+
+            foreach (var exit in DirUtil.All)
+            {
+                if (exit == entry) continue;
+                if (cell.tile != null && !Tiles.Has(cell.tile.Value, exit)) continue;
+                if (seen.Add((next, exit))) queue.Enqueue((next, exit));
+            }
+        }
+        return false;
+    }
+
+    // crosses out blocked objects, and logs when one becomes blocked or free again
+    void UpdateBlocked()
+    {
+        foreach (var o in objects.Where(o => !o.completed))
+        {
+            bool now = IsBlocked(o);
+            if (now != o.blocked) Log(now ? $"{o.spec.name} is blocked." : $"{o.spec.name} is free to move again.");
+            o.blocked = now;
+            o.view.SetBlocked(now);
+        }
+    }
+
+    bool AnyEmptyCell()
+    {
+        foreach (var c in cells)
+            if (!c.obstacle && c.tile == null) return true;
+        return false;
+    }
+
+    bool BonusMet()
+    {
+        switch (level.bonus)
+        {
+            case BonusGoal.UseEveryType: return usedCategories.Count == 3;
+            case BonusGoal.NoCross:      return !usedCategories.Contains(TileCategory.Cross);
+            case BonusGoal.ShortestRoute: return objects.All(o => o.completed && TookShortestRoute(o));
+            default:                     return comboAchieved;
+        }
+    }
+
+    bool TookShortestRoute(MovingObject o) => o.path.Count == ShortestRouteCells(o.spec);
+
+    // fewest grid cells any route can use from the object's entry cell to the cell next to its destination, going around obstacles
+    int ShortestRouteCells(ObjectSpec s)
+    {
+        var from = s.start + DirUtil.Offset(s.heading);
+        var to = new Vector2Int(Mathf.Clamp(s.dest.x, 0, level.width - 1), Mathf.Clamp(s.dest.y, 0, level.height - 1));
+        var dist = new Dictionary<Vector2Int, int> { [from] = 1 };
+        var queue = new Queue<Vector2Int>();
+        queue.Enqueue(from);
+        while (queue.Count > 0)
+        {
+            var c = queue.Dequeue();
+            if (c == to) return dist[c];
+            foreach (var d in DirUtil.All)
+            {
+                var n = c + DirUtil.Offset(d);
+                if (!InGrid(n) || cells[n.x, n.y].obstacle || dist.ContainsKey(n)) continue;
+                dist[n] = dist[c] + 1;
+                queue.Enqueue(n);
+            }
+        }
+        return int.MaxValue; // unreachable
+    }
+
+    int Stars()
+    {
+        if (Delivered < level.required) return 0;
+        if (Delivered < objects.Count) return 1;
+        return BonusMet() ? 3 : 2;
+    }
+
+    // menu button (paused) and the end of a level share this pop-up
+    void ShowMenu(bool ended, string reason)
+    {
+        // the first two stars are delivery tiers
+        // the third is the bonus goal in its own color
+        int stars = Stars();
+        if (menuStars.Length > 0) menuStars[0].color = Delivered >= level.required ? starOnColor : starOffColor;
+        if (menuStars.Length > 1) menuStars[1].color = Delivered >= objects.Count ? starOnColor : starOffColor;
+        if (menuStars.Length > 2) menuStars[2].color = BonusMet() ? bonusStarOnColor : starOffColor;
+
+        bool isLast = levelIndex >= Levels.All.Count - 1;
+        menuTitle.text = level.title + (ended ? " complete" : " paused");
+        menuSummary.text =
+            (reason != null ? reason + "\n" : "") +
+            (ended && finalComboNote != null ? finalComboNote + "\n" : "") +
+            $"Delivered {Delivered} / {objects.Count} (need {level.required})\n" +
+            $"Bonus: {(BonusMet() ? "done" : "not done")}" +
+            (stars == 0 ? "\nEarn at least 1 star to unlock the next level." : "") +
+            (isLast && stars > 0 ? "\nThat was the last level!" : "");
+
+        resumeButton.SetActive(!ended);
+        nextButton.interactable = stars >= 1 && !isLast;
+        levelMenu.SetActive(true);
+    }
+
+    public void ShowStartScreen()
+    {
+        StopAllCoroutines();
+        rulesPopup.SetActive(false);
+        levelMenu.SetActive(false);
+        choiceDimmer.SetActive(false);
+        startScreen.SetActive(true);
+        gameScreen.SetActive(false);
+    }
+
+    public void StartGame() => LoadLevel(0);
+    public void Restart() => LoadLevel(levelIndex);
+    public void NextLevel() { if (levelIndex + 1 < Levels.All.Count) LoadLevel(levelIndex + 1); }
+    public void OpenMenu() => ShowMenu(levelOver, null);
+    public void Resume() => levelMenu.SetActive(false);
+    public void ShowRules() => rulesPopup.SetActive(true);
+    public void HideRules() => rulesPopup.SetActive(false);
+
     // HUD
     void RefreshAll()
     {
@@ -504,6 +707,7 @@ public class GameManager : MonoBehaviour
                 $"Need {level.required} for 1 star, all {objects.Count} for 2.\n";
         goal += $"Tiles left: {inventory.Values.Sum()}";
         goalText.text = goal;
+        bonusText.text = $"Bonus (3rd star):\n{level.BonusText()}\n" + $"Status: {(BonusMet() ? "achieved" : "not yet")}";
     }
 
     void RefreshRemoved(bool pickable = false)
