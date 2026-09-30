@@ -14,6 +14,7 @@ public class GameManager : MonoBehaviour
     public TileCard slotPrefab;
     public ObjectView objectPrefab;
     public DestinationView destinationPrefab;
+    public TileCard cardPrefab;
 
     [Header("Board")]
     public RectTransform cellsRoot;
@@ -28,9 +29,13 @@ public class GameManager : MonoBehaviour
     public Color tileColor = new Color(0.28f, 0.31f, 0.38f);
     public Color slotColor = new Color(0.32f, 0.34f, 0.40f);
     public Color selectedSlotColor = new Color(0.95f, 0.78f, 0.25f);
+    public Color flashColor = new Color(1f, 0.45f, 0.45f);
+    public Color crossHighlightColor = new Color(0.98f, 0.88f, 0.55f);
+    public Color recoverySelectedColor = new Color(0.95f, 0.78f, 0.25f);
 
     [Header("HUD")]
     public RectTransform slotsRoot;
+    public float groupGap = 24f;
     public TMP_Text levelTitleText;
     public TMP_Text goalText;
     public TMP_Text selectedText;
@@ -39,7 +44,15 @@ public class GameManager : MonoBehaviour
     [Header("Cross tile choice")]
     public Button arrowButtonPrefab;
     public RectTransform choicesRoot;
-    public Color crossHighlightColor = new Color(0.98f, 0.88f, 0.55f);
+
+    [Header("Removed tiles and recovery")]
+    public RectTransform crossRemovedRoot;
+    public RectTransform cornerRemovedRoot;
+    public RectTransform straightRemovedRoot;
+    public GameObject choiceDimmer;
+    public TMP_Text removedHeader;
+    public float flashHoldSeconds = 0.4f;
+    public float flashFadeSeconds = 1.2f;
 
     [Header("Testing")]
     public int firstLevel = 0; // 0 = Level 1
@@ -63,6 +76,12 @@ public class GameManager : MonoBehaviour
         public DestinationView dest;
     }
 
+    class RemovedEntry
+    {
+        public TileType type;
+        public string source;
+    }
+
     int levelIndex;
     LevelData level;
     Cell[,] cells;
@@ -74,6 +93,10 @@ public class GameManager : MonoBehaviour
     readonly List<string> log = new List<string>();
     List<MovingObject> objects;
     Dir? pendingDirection;
+    List<RemovedEntry> removed;
+    TileType? pendingRecovery;
+    bool comboAchieved;
+    string finalComboNote; // set when the last objects arrive together
 
     // level loading and the board
     void Start()
@@ -86,12 +109,16 @@ public class GameManager : MonoBehaviour
     {
         StopAllCoroutines();
         Clear(choicesRoot);
+        choiceDimmer.SetActive(false);
         levelIndex = index;
         level = Levels.All[index];
         inventory = Tiles.All.ToDictionary(t => t, t => level.inventory.TryGetValue(t, out var c) ? c : 0);
         selected = null;
         busy = false;
         log.Clear();
+        removed = new List<RemovedEntry>();
+        comboAchieved = false;
+        finalComboNote = null;
 
         BuildBoard();
         Log($"{level.title}: pick a tile, then click an empty cell.");
@@ -167,8 +194,19 @@ public class GameManager : MonoBehaviour
     void BuildSlots()
     {
         Clear(slotsRoot);
+        TileCategory? previous = null;
         foreach (var t in Tiles.All)
         {
+            var category = Tiles.Category(t);
+            if (previous != null && category != previous)
+            {
+                var gap = new GameObject("Gap", typeof(RectTransform));
+                var rt = (RectTransform)gap.transform;
+                rt.SetParent(slotsRoot, false);
+                rt.sizeDelta = new Vector2(groupGap, 1);
+            }
+            previous = category;
+
             var slot = Instantiate(slotPrefab, slotsRoot);
             slot.SetTile(tilePrefab, t, tileColor);
             var type = t; // copy for the click handler below
@@ -216,6 +254,7 @@ public class GameManager : MonoBehaviour
                 Log($"{o.spec.name} reached its destination!");
             }
         }
+        if (deliveredNow.Count > 0) yield return HandleDeliveries(deliveredNow);
 
         busy = false;
         RefreshAll();
@@ -334,11 +373,115 @@ public class GameManager : MonoBehaviour
         o.heading = pendingDirection.Value;
     }
 
+    // after delivery - tile loss and recovery
+    IEnumerator HandleDeliveries(List<MovingObject> deliveredNow)
+    {
+        var removedNow = new List<RemovedEntry>();
+        foreach (var o in deliveredNow)
+        {
+            // one random tile from the completed path
+            var candidates = o.path.Distinct()
+                .Where(c => cells[c.x, c.y].tile != null)
+                .ToList();
+            if (candidates.Count > 0)
+            {
+                var c = candidates[Random.Range(0, candidates.Count)];
+                var entry = new RemovedEntry { type = cells[c.x, c.y].tile.Value, source = $"{o.spec.name}'s path" };
+                ClearTile(c);
+                removed.Add(entry);
+                removedNow.Add(entry);
+                Log($"Removed {Tiles.Name(entry.type)} from the board at ({c.x},{c.y}).");
+            }
+
+            // one random unused tile from the supply
+            var lost = TakeRandomFromSupply();
+            if (lost != null)
+            {
+                var entry = new RemovedEntry { type = lost.Value, source = "unused supply" };
+                removed.Add(entry);
+                removedNow.Add(entry);
+                Log($"Lost an unused {Tiles.Name(entry.type)}.");
+            }
+        }
+        RefreshAll();
+
+        // 2 or more deliveries from one placement - the player gets one removed tile back unless that finished the level
+        if (deliveredNow.Count >= 2)
+        {
+            comboAchieved = true;
+            if (objects.All(o => o.completed))
+            {
+                finalComboNote = string.Join(" and ", deliveredNow.Select(o => o.spec.name)) + " arrived together!";
+                Log(finalComboNote);
+            }
+            else if (removed.Count > 0) yield return RecoveryChoice();
+        }
+    }
+
+    IEnumerator RecoveryChoice()
+    {
+        pendingRecovery = null;
+        choiceDimmer.SetActive(true);
+        removedHeader.text = "Pick one to get back:";
+        RefreshRemoved(pickable: true);
+        Log("Multiple deliveries with one tile! Pick any tile in the Removed panel to get it back.");
+
+        while (pendingRecovery == null) yield return null; // wait for a click on a card
+        yield return new WaitForSeconds(0.25f);
+
+        choiceDimmer.SetActive(false);
+        removedHeader.text = "Removed Tiles";
+
+        var picked = removed.First(e => e.type == pendingRecovery.Value);
+        inventory[picked.type]++;
+        removed.Remove(picked);
+        Log($"Recovered {Tiles.Name(picked.type)} to your supply.");
+        RefreshAll();
+    }
+
+
+    // picks a random unused tile, weighted by how many of each you hold
+    TileType? TakeRandomFromSupply()
+    {
+        int total = inventory.Values.Sum();
+        if (total == 0) return null;
+        int r = Random.Range(0, total);
+        foreach (var t in Tiles.All)
+        {
+            if (r < inventory[t]) { inventory[t]--; return t; }
+            r -= inventory[t];
+        }
+        return null;
+    }
+
+    void ClearTile(Vector2Int p)
+    {
+        var cell = cells[p.x, p.y];
+        cell.tile = null;
+        if (cell.tileView != null) Destroy(cell.tileView.gameObject);
+        cell.tileView = null;
+        StartCoroutine(Flash(cell.view.background));
+    }
+
+    // briefly tints a cell red so the player sees where a tile was removed.
+    IEnumerator Flash(Image img)
+    {
+        img.color = flashColor;
+        yield return new WaitForSeconds(flashHoldSeconds);
+        for (float t = 0; t < flashFadeSeconds; t += Time.deltaTime)
+        {
+            img.color = Color.Lerp(flashColor, cellColor, t / flashFadeSeconds);
+            yield return null;
+        }
+        img.color = cellColor;
+    }
+
     // HUD
     void RefreshAll()
     {
         RefreshInventory();
         RefreshInfo();
+        RefreshRemoved();
     }
 
     void RefreshInventory()
@@ -361,6 +504,50 @@ public class GameManager : MonoBehaviour
                 $"Need {level.required} for 1 star, all {objects.Count} for 2.\n";
         goal += $"Tiles left: {inventory.Values.Sum()}";
         goalText.text = goal;
+    }
+
+    void RefreshRemoved(bool pickable = false)
+    {
+        Clear(crossRemovedRoot);
+        Clear(cornerRemovedRoot);
+        Clear(straightRemovedRoot);
+        int crossCards = 0, cornerCards = 0, straightCards = 0;
+
+        foreach (var t in Tiles.All)
+        {
+            int count = removed.Count(e => e.type == t);
+            if (count == 0) continue;
+            var category = Tiles.Category(t);
+            var parent = category switch
+            {
+                TileCategory.Cross => crossRemovedRoot,
+                TileCategory.Corner => cornerRemovedRoot,
+                _ => straightRemovedRoot,
+            };
+            if (category == TileCategory.Cross) crossCards++;
+            else if (category == TileCategory.Corner) cornerCards++;
+            else straightCards++;
+
+            var card = Instantiate(cardPrefab, parent);
+            card.SetTile(tilePrefab, t, tileColor);
+            card.label.text = "x" + count;
+
+            card.button.enabled = pickable; // otherwise the card is just a display
+            if (pickable)
+            {
+                var type = t;       // copies for the click handler below
+                var clicked = card;
+                card.button.onClick.AddListener(() =>
+                {
+                    clicked.background.color = recoverySelectedColor; // show what was picked
+                    pendingRecovery = type;
+                });
+            }
+        }
+
+        crossRemovedRoot.gameObject.SetActive(crossCards > 0);
+        cornerRemovedRoot.gameObject.SetActive(cornerCards > 0);
+        straightRemovedRoot.gameObject.SetActive(straightCards > 0);
     }
 
     void Log(string msg)
