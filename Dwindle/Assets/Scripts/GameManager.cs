@@ -36,6 +36,11 @@ public class GameManager : MonoBehaviour
     public TMP_Text selectedText;
     public TMP_Text logText;
 
+    [Header("Cross tile choice")]
+    public Button arrowButtonPrefab;
+    public RectTransform choicesRoot;
+    public Color crossHighlightColor = new Color(0.98f, 0.88f, 0.55f);
+
     [Header("Testing")]
     public int firstLevel = 0; // 0 = Level 1
 
@@ -68,6 +73,7 @@ public class GameManager : MonoBehaviour
     bool busy; // true while objects are moving or waiting for a choice
     readonly List<string> log = new List<string>();
     List<MovingObject> objects;
+    Dir? pendingDirection;
 
     // level loading and the board
     void Start()
@@ -79,6 +85,7 @@ public class GameManager : MonoBehaviour
     public void LoadLevel(int index)
     {
         StopAllCoroutines();
+        Clear(choicesRoot);
         levelIndex = index;
         level = Levels.All[index];
         inventory = Tiles.All.ToDictionary(t => t, t => level.inventory.TryGetValue(t, out var c) ? c : 0);
@@ -248,7 +255,7 @@ public class GameManager : MonoBehaviour
             var t = cell.tile.Value;
             if (t == TileType.Cross)
             {
-                // let the player choose here TODO
+                yield return AskDirection(o);
             }
             else
             {
@@ -295,6 +302,37 @@ public class GameManager : MonoBehaviour
     }
 
     int Delivered => objects.Count(o => o.completed);
+
+    // object waits at the center of the + tile
+    // an arrow button in the object's color appears at each of the tile's other edges but not the one it came in through
+    // clicking one sends it out that way
+    IEnumerator AskDirection(MovingObject o)
+    {
+        var cellBg = cells[o.pos.x, o.pos.y].view.background;
+        cellBg.color = crossHighlightColor;
+        Clear(choicesRoot);
+
+        pendingDirection = null;
+        foreach (var d in DirUtil.All)
+        {
+            if (d == DirUtil.Opposite(o.heading)) continue; // can't turn back
+            var dir = d; // copy for the click handler below
+            var button = Instantiate(arrowButtonPrefab, choicesRoot);
+            var rt = (RectTransform)button.transform;
+            rt.sizeDelta = Vector2.one * cellSize * 0.25f;
+            rt.anchoredPosition = CellPos(o.pos) + (Vector2)DirUtil.Offset(d) * cellSize * 0.39f; // near that edge
+            rt.localEulerAngles = new Vector3(0, 0, DirUtil.Angle(d)); // the prefab's arrow points up
+            button.GetComponent<Image>().color = o.spec.color;
+            button.onClick.AddListener(() => pendingDirection = dir);
+        }
+
+        Log($"{o.spec.name} is on a + tile. Click an arrow to choose its direction.");
+        while (pendingDirection == null) yield return null; // wait for a click
+
+        Clear(choicesRoot);
+        cellBg.color = cellColor;
+        o.heading = pendingDirection.Value;
+    }
 
     // HUD
     void RefreshAll()
