@@ -11,6 +11,14 @@ public class MenuView : MonoBehaviour
     public GameObject rulesPopup;
     public GameObject levelMenu;
 
+    [Header("Rules pages")]
+    public GameObject[] rulesPages;
+    public Button previousRulesButton;
+    public Button nextRulesButton;
+    public TMP_Text rulesPageIndicator;
+
+    int currentRulesPage;
+
     [Header("Level menu")]
     public TMP_Text menuTitle;
     public TMP_Text menuSummary;
@@ -43,7 +51,46 @@ public class MenuView : MonoBehaviour
         levelMenu.SetActive(false);
     }
 
-    public void SetRulesVisible(bool visible) => rulesPopup.SetActive(visible);
+    public void SetRulesVisible(bool visible)
+    {
+        rulesPopup.SetActive(visible);
+
+        if (visible)
+            ShowRulesPage(0);
+    }
+
+        public void ShowNextRulesPage()
+    {
+        ShowRulesPage(currentRulesPage + 1);
+    }
+
+    public void ShowPreviousRulesPage()
+    {
+        ShowRulesPage(currentRulesPage - 1);
+    }
+
+    void ShowRulesPage(int pageIndex)
+    {
+        if (rulesPages == null || rulesPages.Length == 0)
+            return;
+
+        currentRulesPage = Mathf.Clamp(
+            pageIndex,
+            0,
+            rulesPages.Length - 1
+        );
+
+        for (int i = 0; i < rulesPages.Length; i++)
+            rulesPages[i].SetActive(i == currentRulesPage);
+
+        previousRulesButton.gameObject.SetActive(currentRulesPage > 0);
+        nextRulesButton.gameObject.SetActive(
+            currentRulesPage < rulesPages.Length - 1
+        );
+
+        rulesPageIndicator.text =
+            $"{currentRulesPage + 1} / {rulesPages.Length}";
+    }
 
     public void HideMenu() => levelMenu.SetActive(false);
 

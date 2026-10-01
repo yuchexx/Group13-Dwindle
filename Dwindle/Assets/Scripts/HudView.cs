@@ -72,21 +72,25 @@ public class HudView : MonoBehaviour
             slots[t].label.text = "x" + inventory[t];
             slots[t].background.color = selected == t ? selectedSlotColor : slotColor;
         }
-        selectedText.text = "Selected: " + (selected == null ? "none" : Tiles.Name(selected.Value));
+        selectedText.text = "<b>Selected Tile:</b> " + (selected == null ? "None" : Tiles.Name(selected.Value));
     }
 
     public void RefreshInfo(LevelData level, int delivered, int total, int tilesLeft, bool bonusMet)
     {
         levelTitleText.text = level.title;
-        string goal = "";
-        goal += "Deliver every object to the ring of its own color.\n\n" +
-                $"Delivered: {delivered} of {total}\n";
-        goal += $"Tiles left: {tilesLeft}";
-        goal += $"\n\n1 star: deliver {level.required}" +
-                $"\n2 stars: deliver all {total}";
-        goalText.text = goal;
-        bonusText.text = $"3 stars: deliver all {total} and\n{level.BonusText()}\n" +
-                         $"Bonus so far: {(bonusMet ? "done" : "not yet")}";
+
+    goalText.text =
+        "Match objects to their colored rings.\n\n" +
+        "<b>Progress</b>\n" +
+        $"{delivered}/{total} delivered | {tilesLeft} tiles left\n\n" +
+        "<b>Star Goals</b>\n" +
+        $"1 star: deliver {level.required}\n" +
+        $"2 stars: deliver all {total}";
+
+    bonusText.text =
+        $"3 stars: deliver all {total} and\n" +
+        $"{level.BonusText()}\n" +
+        $"Bonus: {(bonusMet ? "Complete" : "Not complete")}";
     }
 
     // 3 sections of the panel: + on top, the four L tiles, then the two I tiles
