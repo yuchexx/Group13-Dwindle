@@ -4550,14 +4550,14 @@ MonoBehaviour:
   objectsRoot: {fileID: 1860073911}
   choicesRoot: {fileID: 1050023301}
   boardSize: 700
-  moveSecondsPerCell: 0.5
+  moveSecondsPerCell: 0.25
   cellColor: {r: 0.86, g: 0.87, b: 0.89, a: 1}
   obstacleColor: {r: 0.22, g: 0.22, b: 0.25, a: 1}
   tileColor: {r: 0.28, g: 0.31, b: 0.38, a: 1}
   crossHighlightColor: {r: 0.98, g: 0.88, b: 0.55, a: 1}
   flashColor: {r: 1, g: 0.45, b: 0.45, a: 1}
-  flashHoldSeconds: 0.4
-  flashFadeSeconds: 0.8
+  flashHoldSeconds: 0.2
+  flashFadeSeconds: 0.2
 --- !u!1 &1431757426
 GameObject:
   m_ObjectHideFlags: 0
@@ -6001,11 +6001,10 @@ MonoBehaviour:
     One random unused tile is removed from your supply.\n\nRecover a Tile\nIf one
     placement delivers two or more objects and the level continues, choose one tile
     from the Removed panel to recover.\n\nBlocked Objects\nA crossed-out object is
-    blocked by the board edge, an obstacle, or an incompatible tile.\n\nStar Goals\n1
-    star: Deliver the required number of objects.\n2 stars: Deliver every object.\n3
-    stars: Deliver every object and complete the bonus goal.\n\nThe level ends when
-    all objects are delivered, no object can reach its destination, no tiles remain,
-    or no empty cells remain."
+    blocked by the board edge, an obstacle, or an incompatible tile.\n\nStar Goals\n1st
+    star: Deliver the required number of objects.\n2nd star: Deliver every object.\n3rd
+    star: Complete the bonus goal.\n\nThe level ends when all objects are delivered,
+    no object can reach its destination, no tiles remain, or no empty cells remain."
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

@@ -40,6 +40,7 @@ public class GameManager : MonoBehaviour
         StopAllCoroutines();
         board.ClearChoices();
         hud.SetChoiceMode(false);
+        hud.ResetSlotFlashes();
         menu.ShowGame();
         levelOver = false;
         usedCategories = new HashSet<TileCategory>();
@@ -187,6 +188,7 @@ public class GameManager : MonoBehaviour
                 removed.Add(entry);
                 removedNow.Add(entry);
                 Log($"Lost an unused {Tiles.Name(entry.type)}.");
+                hud.FlashSlot(lost.Value);
             }
         }
         RefreshAll();

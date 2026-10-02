@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using TMPro;
@@ -35,9 +36,14 @@ public class HudView : MonoBehaviour
     public Color slotColor = new Color(0.32f, 0.34f, 0.40f);
     public Color selectedSlotColor = new Color(0.95f, 0.78f, 0.25f);
     public Color recoverySelectedColor = new Color(0.95f, 0.78f, 0.25f); // the card you click to get back
+    public Color flashColor = new Color(1f, 0.45f, 0.45f);
+    public float flashHoldSeconds = 0.2f;
+    public float flashFadeSeconds = 0.2f;
 
     readonly Dictionary<TileType, TileCard> slots = new Dictionary<TileType, TileCard>();
     readonly List<string> log = new List<string>();
+    readonly HashSet<TileType> flashingSlots = new HashSet<TileType>();
+    TileType? lastSelected;
 
     // one slot per tile type, in the order of Tiles.All (+, the four L tiles, the two I tiles) with empty gaps
     public void BuildSlots(Action<TileType> onSelect)
@@ -67,12 +73,36 @@ public class HudView : MonoBehaviour
 
     public void RefreshInventory(Dictionary<TileType, int> inventory, TileType? selected)
     {
+        lastSelected = selected;
         foreach (var t in Tiles.All)
         {
             slots[t].label.text = "x" + inventory[t];
+            if (flashingSlots.Contains(t)) continue;
             slots[t].background.color = selected == t ? selectedSlotColor : slotColor;
         }
-        selectedText.text = "<b>Selected Tile:</b> " + (selected == null ? "None" : Tiles.Name(selected.Value));
+        selectedText.text = "Selected: " + (selected == null ? "none" : Tiles.Name(selected.Value));
+    }
+
+    public void FlashSlot(TileType t) => StartCoroutine(FlashSlotRoutine(t));
+
+    IEnumerator FlashSlotRoutine(TileType t)
+    {
+        var img = slots[t].background;
+        flashingSlots.Add(t);
+        img.color = flashColor;
+        for (float f = 0; f < flashHoldSeconds + flashFadeSeconds; f += Time.deltaTime)
+        {
+            img.color = Color.Lerp(flashColor, slotColor, Mathf.Clamp01((f - flashHoldSeconds) / flashFadeSeconds));
+            yield return null;
+        }
+        flashingSlots.Remove(t);
+        img.color = lastSelected == t ? selectedSlotColor : slotColor;
+    }
+
+    public void ResetSlotFlashes()
+    {
+        StopAllCoroutines();
+        flashingSlots.Clear();
     }
 
     public void RefreshInfo(LevelData level, int delivered, int total, int tilesLeft, bool bonusMet)
@@ -84,11 +114,11 @@ public class HudView : MonoBehaviour
         "<b>Progress</b>\n" +
         $"{delivered}/{total} delivered | {tilesLeft} tiles left\n\n" +
         "<b>Star Goals</b>\n" +
-        $"1 star: deliver {level.required}\n" +
-        $"2 stars: deliver all {total}";
+        $"1st star: Deliver {level.required}\n" +
+        $"2nd star: Deliver all {total}";
 
     bonusText.text =
-        $"3 stars: deliver all {total} and\n" +
+        $"3rd star (bonus goal):\n" +
         $"{level.BonusText()}\n" +
         $"Bonus: {(bonusMet ? "Complete" : "Not complete")}";
     }
