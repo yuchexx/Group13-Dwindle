@@ -84,11 +84,11 @@ public class HudView : MonoBehaviour
         "<b>Progress</b>\n" +
         $"{delivered}/{total} delivered | {tilesLeft} tiles left\n\n" +
         "<b>Star Goals</b>\n" +
-        $"1 star: deliver {level.required}\n" +
-        $"2 stars: deliver all {total}";
+        $"1st star: Deliver {level.required}\n" +
+        $"2nd star: Deliver all {total}";
 
     bonusText.text =
-        $"3 stars: deliver all {total} and\n" +
+        $"3rd star (bonus goal):\n" +
         $"{level.BonusText()}\n" +
         $"Bonus: {(bonusMet ? "Complete" : "Not complete")}";
     }
