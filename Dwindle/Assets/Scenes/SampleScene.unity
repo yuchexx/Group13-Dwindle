@@ -1484,6 +1484,9 @@ MonoBehaviour:
   slotColor: {r: 0.32, g: 0.34, b: 0.4, a: 1}
   selectedSlotColor: {r: 0.95, g: 0.78, b: 0.25, a: 1}
   recoverySelectedColor: {r: 0.95, g: 0.78, b: 0.25, a: 1}
+  flashColor: {r: 1, g: 0.45, b: 0.45, a: 1}
+  flashHoldSeconds: 0.5
+  flashFadeSeconds: 0.5
 --- !u!1 &494582651
 GameObject:
   m_ObjectHideFlags: 0
@@ -4556,8 +4559,8 @@ MonoBehaviour:
   tileColor: {r: 0.28, g: 0.31, b: 0.38, a: 1}
   crossHighlightColor: {r: 0.98, g: 0.88, b: 0.55, a: 1}
   flashColor: {r: 1, g: 0.45, b: 0.45, a: 1}
-  flashHoldSeconds: 0.2
-  flashFadeSeconds: 0.2
+  flashHoldSeconds: 0.5
+  flashFadeSeconds: 0.5
 --- !u!1 &1431757426
 GameObject:
   m_ObjectHideFlags: 0
